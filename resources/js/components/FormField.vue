@@ -5,14 +5,25 @@
     :full-width-content="field.width"
   >
     <template slot="field">
+        <a
+            class="inline-block font-bold cursor-pointer mr-2 animate-text-color select-none border-primary mb-2"
+            :class="{ 'text-60': localeKey !== currentLocale, 'text-primary border-b-2': localeKey === currentLocale }"
+            :key="`a-${localeKey}`"
+            v-for="(locale, localeKey) in field.locales"
+            @click="changeTab(localeKey)"
+        >
+            {{ locale }}
+        </a>
+
       <quill-editor
         :style="css"
-        v-model="value"
+        v-model="value[currentLocale]"
         ref="myQuillEditor"
         :options="editorOption"
         @blur="onEditorBlur($event)"
         @focus="onEditorFocus($event)"
         @ready="onEditorReady($event)"
+        @keydown.tab="handleTab"
       ></quill-editor>
     </template>
   </default-field>
@@ -29,6 +40,7 @@ import { CustomImageSpec } from "../../quilljs/CustomImageSpec";
 import "quill/dist/quill.core.css";
 import "quill/dist/quill.snow.css";
 import "quill/dist/quill.bubble.css";
+import { EventBus } from '../event-bus';
 
 Quill.register({
   "modules/ImageExtend": ImageExtend,
@@ -45,6 +57,8 @@ export default {
   props: ["resourceName", "resourceId", "field"],
   data() {
     return {
+      locales: Object.keys(this.field.locales),
+      currentLocale: null,
       persisted: [],
       toolbarTips: this.field.tooltip,
       editorOption: {
@@ -98,6 +112,30 @@ export default {
     };
   },
   methods: {
+    changeTab(locale, dontEmit) {
+        if(this.currentLocale !== locale){
+            if(!dontEmit){
+                EventBus.$emit('localeChanged', locale);
+            }
+
+            this.currentLocale = locale;
+        }
+    },
+
+    handleTab(e) {
+        const currentIndex = this.locales.indexOf(this.currentLocale)
+        if (!e.shiftKey) {
+            if (currentIndex < this.locales.length - 1) {
+                e.preventDefault();
+                this.changeTab(this.locales[currentIndex + 1]);
+            }
+        } else {
+            if (currentIndex > 0) {
+                e.preventDefault();
+                this.changeTab(this.locales[currentIndex - 1]);
+            }
+        }
+    },
     _uuid() {
       var d = Date.now();
       if (
@@ -117,25 +155,24 @@ export default {
     /*
      * Set the initial, internal value for the field.
      */
-    setInitialValue() {
-      this.value = this.field.value || "";
-    },
+      setInitialValue() {
+          this.value = this.field.value || ''
+      },
 
     /**
      * Fill the given FormData object with the field's internal value.
      */
     fill(formData) {
-      formData.append(this.field.attribute, this.value || "");
-      if (!formData.has('persisted')) {
-        formData.append('persisted', JSON.stringify(this.persisted));
-      }
+        Object.keys(this.value).forEach(locale => {
+            formData.append(this.field.attribute + '[' + locale + ']', this.value[locale] || '')
+        })
     },
 
     /**
      * Update the field's internal value.
      */
     handleChange(value) {
-      this.value = value;
+        this.value[this.currentLocale] = value
     },
 
     onEditorBlur(quill) {
@@ -173,6 +210,14 @@ export default {
   },
   mounted() {
     this.autotip()
+
+     this.currentLocale = this.locales[0] || null;
+
+     EventBus.$on('localeChanged', locale => {
+         if(this.currentLocale !== locale) {
+             this.changeTab(locale, true);
+         }
+     });
   },
 };
 </script>
